@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import toast from "react-hot-toast";
 import { Camera, Image as ImageIcon, Loader2 } from "lucide-react";
+import imageCompression from "browser-image-compression";
 
 const editSchema = z.object({
   fullName: z.string().min(2, { message: "Name must be at least 2 characters" }),
@@ -69,16 +70,26 @@ export default function ProfileEditPage() {
         return;
       }
       const file = event.target.files[0];
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `${type}s/${fileName}`;
-
+      
       if (type === 'avatar') setAvatarUploading(true);
       else setCoverUploading(true);
 
+      // Compress image
+      const options = {
+        maxSizeMB: 0.1, // 100kb
+        maxWidthOrHeight: 1920,
+        useWebWorker: true,
+      };
+      
+      const compressedFile = await imageCompression(file, options);
+
+      const fileExt = compressedFile.name.split('.').pop() || 'jpg';
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `${type}s/${fileName}`;
+
       const { error: uploadError, data } = await supabase.storage
         .from('images')
-        .upload(filePath, file);
+        .upload(filePath, compressedFile);
 
       if (uploadError) {
         throw uploadError;

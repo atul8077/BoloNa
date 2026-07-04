@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Settings, Edit3, Grid, Info, MapPin, Briefcase, GraduationCap, Heart, Loader2, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import toast from "react-hot-toast";
+import imageCompression from "browser-image-compression";
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = React.useState<'posts' | 'about'>('posts');
@@ -53,16 +54,26 @@ export default function ProfilePage() {
       if (!event.target.files || event.target.files.length === 0) return;
       
       const file = event.target.files[0];
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `posts/${fileName}`;
       
       setUploading(true);
+
+      // Compress image
+      const options = {
+        maxSizeMB: 0.1, // 100kb
+        maxWidthOrHeight: 1920,
+        useWebWorker: true,
+      };
+      
+      const compressedFile = await imageCompression(file, options);
+
+      const fileExt = compressedFile.name.split('.').pop() || 'jpg';
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `posts/${fileName}`;
 
       // Upload image to storage
       const { error: uploadError } = await supabase.storage
         .from('images')
-        .upload(filePath, file);
+        .upload(filePath, compressedFile);
 
       if (uploadError) throw uploadError;
 
