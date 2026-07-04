@@ -1,12 +1,67 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, Video, DollarSign, Settings, LogOut, Flag } from "lucide-react";
+import { LayoutDashboard, Users, Video, DollarSign, Settings, LogOut, Flag, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+  const [passwordInput, setPasswordInput] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+    if (sessionStorage.getItem("adminAuth") === "true") {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === "HarryPorter") {
+      sessionStorage.setItem("adminAuth", "true");
+      setIsAuthenticated(true);
+      setError("");
+    } else {
+      setError("Invalid password");
+    }
+  };
+
+  if (!isMounted) return null; // Avoid hydration mismatch
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0F172A] p-4">
+        <div className="bg-white dark:bg-[#1E293B] p-8 rounded-2xl shadow-2xl max-w-md w-full border border-gray-200 dark:border-gray-800 text-center space-y-6">
+          <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-8 h-8 text-red-500" />
+          </div>
+          <h1 className="text-2xl font-bold">Admin Portal</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Restricted Area. Please enter the master password.</p>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <Input 
+              type="password" 
+              placeholder="Enter password..." 
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              className="w-full h-12 text-center"
+            />
+            {error && <p className="text-red-500 text-sm font-medium">{error}</p>}
+            <Button type="submit" className="w-full h-12 font-bold bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)]">
+              Unlock Portal
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   const sidebarItems = [
     { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
@@ -46,7 +101,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         <div className="p-4 border-t border-gray-200 dark:border-gray-800">
-          <button className="flex items-center text-red-500 hover:text-red-600 font-medium px-3 py-2 w-full transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10">
+          <button 
+            onClick={() => {
+              sessionStorage.removeItem("adminAuth");
+              setIsAuthenticated(false);
+            }}
+            className="flex items-center text-red-500 hover:text-red-600 font-medium px-3 py-2 w-full transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10"
+          >
             <LogOut className="w-5 h-5 mr-3" />
             Sign Out
           </button>
