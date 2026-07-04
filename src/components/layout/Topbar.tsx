@@ -4,9 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search, Home, Compass, MessageCircle, User, Wallet, Video, Sparkles, Settings, Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import * as React from "react";
+import { supabase } from "@/lib/supabase";
 
 export function Topbar() {
   const pathname = usePathname();
+  const [username, setUsername] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    async function loadUser() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('profiles').select('username').eq('id', user.id).single();
+        if (data?.username) {
+          setUsername(data.username);
+        }
+      }
+    }
+    loadUser();
+  }, []);
 
   const navItems = [
     { name: "Home", href: "/home", icon: Home },
@@ -56,6 +72,11 @@ export function Topbar() {
 
         {/* Global Search & User Actions */}
         <div className="flex items-center space-x-4">
+          {username && (
+            <div className="hidden md:flex items-center px-3 py-1.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] font-semibold text-sm border border-[var(--primary)]/20">
+              @{username}
+            </div>
+          )}
           <button className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 transition-colors">
             <Search className="h-5 w-5 text-[var(--foreground)]/70" />
           </button>

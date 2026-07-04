@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { VideoCall } from "@/components/calls/VideoCall";
 import { AudioCall } from "@/components/calls/AudioCall";
 import { GiftPicker } from "@/components/ui/gift-picker";
-import { Gift, ArrowLeft, Phone, Video, Send, Smile, Paperclip, MoreVertical } from "lucide-react";
+import { Gift, ArrowLeft, Phone, Video, Send, Smile, MoreVertical } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface Message {
@@ -19,60 +19,86 @@ interface Message {
 }
 
 export default function ChatRoomPage() {
-  const { id } = useParams();
+  const { id: receiverId } = useParams() as { id: string };
   const router = useRouter();
+  
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [newMessage, setNewMessage] = React.useState("");
+  
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
+  const [receiverProfile, setReceiverProfile] = React.useState<any>(null);
+  
   const [activeCall, setActiveCall] = React.useState<'audio' | 'video' | null>(null);
   const [showGifts, setShowGifts] = React.useState(false);
+  
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const channelRef = React.useRef<any>(null);
+
+  // Helper to generate a unique conversation key for local storage
+  const getConversationKey = (userA: string, userB: string) => {
+    return `chat_${[userA, userB].sort().join('_')}`;
+  };
 
   React.useEffect(() => {
-    // 1. Get current user
-    const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      setCurrentUserId(data.user?.id || 'mock-user-id');
-    };
-    fetchUser();
+    async function initChat() {
+      // 1. Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+      setCurrentUserId(user.id);
 
-    // 2. Fetch initial messages
-    const fetchMessages = async () => {
-      const { data } = await supabase
-        .from('messages')
+      // 2. Fetch Receiver Profile info (for Header)
+      const { data: profile } = await supabase
+        .from('profiles')
         .select('*')
-        .eq('conversation_id', id)
-        .order('created_at', { ascending: true });
+        .eq('id', receiverId)
+        .single();
+      if (profile) setReceiverProfile(profile);
+
+      // 3. Load Local Messages
+      const chatKey = getConversationKey(user.id, receiverId);
+      const savedMessages = localStorage.getItem(chatKey);
+      if (savedMessages) {
+        try {
+          setMessages(JSON.parse(savedMessages));
+        } catch(e) {
+          console.error("Error parsing local messages");
+        }
+      }
+
+      // 4. Setup Supabase Broadcast for Realtime P2P
+      const channel = supabase.channel(`chat_room_${chatKey}`);
+      channel.on('broadcast', { event: 'new_message' }, (payload) => {
+        const incomingMessage = payload.payload as Message;
         
-      if (data) setMessages(data);
-    };
-    fetchMessages();
+        // Save to state
+        setMessages((prev) => {
+          const updated = [...prev, incomingMessage];
+          // Save to local storage
+          localStorage.setItem(chatKey, JSON.stringify(updated));
+          return updated;
+        });
+      });
 
-    // 3. Subscribe to Realtime updates
-    const channel = supabase
-      .channel(`realtime:messages:${id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${id}`
-      }, (payload) => {
-        setMessages((prev) => [...prev, payload.new as Message]);
-      })
-      .subscribe();
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log("Connected to P2P Chat Room");
+        }
+      });
 
-    // Mock initial data if DB is empty for UI demonstration
-    if (messages.length === 0) {
-      setMessages([
-        { id: '1', sender_id: 'other', content: 'Hey there! How is it going?', created_at: new Date().toISOString() },
-        { id: '2', sender_id: 'mock-user-id', content: 'Hi! I am doing great, just checking out this new app.', created_at: new Date().toISOString() },
-      ]);
+      channelRef.current = channel;
     }
 
+    initChat();
+
     return () => {
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
     };
-  }, [id]);
+  }, [receiverId, router]);
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -82,35 +108,56 @@ export default function ChatRoomPage() {
     e.preventDefault();
     if (!newMessage.trim() || !currentUserId) return;
 
-    // Optimistic UI update for mock logic
-    const tempMsg = {
+    const msg: Message = {
       id: Date.now().toString(),
       sender_id: currentUserId,
       content: newMessage,
       created_at: new Date().toISOString(),
     };
-    setMessages(prev => [...prev, tempMsg]);
+
+    // 1. Update State
+    const updatedMessages = [...messages, msg];
+    setMessages(updatedMessages);
     setNewMessage("");
 
-    // Actual DB Insert (Uncomment when fully wired)
-    /*
-    await supabase.from('messages').insert({
-      conversation_id: id,
-      sender_id: currentUserId,
-      content: tempMsg.content
-    });
-    */
+    // 2. Save to Local Storage
+    const chatKey = getConversationKey(currentUserId, receiverId);
+    localStorage.setItem(chatKey, JSON.stringify(updatedMessages));
+
+    // 3. Broadcast to receiver
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: msg
+      });
+    }
   };
 
   const handleSendGift = (giftId: number, coins: number) => {
-    // Optimistic UI for sending a gift
-    const tempMsg = {
+    if (!currentUserId) return;
+    
+    const msg: Message = {
       id: Date.now().toString(),
-      sender_id: currentUserId || 'mock',
+      sender_id: currentUserId,
       content: `🎁 Sent a gift (${coins} coins)`,
       created_at: new Date().toISOString(),
     };
-    setMessages(prev => [...prev, tempMsg]);
+
+    const updatedMessages = [...messages, msg];
+    setMessages(updatedMessages);
+    
+    const chatKey = getConversationKey(currentUserId, receiverId);
+    localStorage.setItem(chatKey, JSON.stringify(updatedMessages));
+
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: msg
+      });
+    }
+    
     toast.success(`Gift sent successfully! (-${coins} coins)`);
   };
 
@@ -124,12 +171,16 @@ export default function ChatRoomPage() {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="relative">
-            <img src="https://i.pravatar.cc/150?u=aisha" alt="Avatar" className="w-10 h-10 rounded-full object-cover" />
+            <img 
+              src={receiverProfile?.avatar_url || `https://api.dicebear.com/9.x/avataaars/svg?seed=${receiverProfile?.full_name || 'user'}`} 
+              alt="Avatar" 
+              className="w-10 h-10 rounded-full object-cover" 
+            />
             <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border border-white rounded-full" />
           </div>
           <div>
-            <h2 className="font-semibold text-[var(--foreground)]">Aisha Sharma</h2>
-            <p className="text-xs text-[var(--foreground)]/50">Online</p>
+            <h2 className="font-semibold text-[var(--foreground)]">{receiverProfile?.full_name || 'Anonymous'}</h2>
+            <p className="text-xs text-[var(--foreground)]/50">@{receiverProfile?.username || 'user'}</p>
           </div>
         </div>
 
@@ -148,7 +199,9 @@ export default function ChatRoomPage() {
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="text-center text-xs text-[var(--foreground)]/40 my-4">Today</div>
+        <div className="text-center text-xs text-[var(--foreground)]/40 my-4">
+          Chat securely. Messages are stored only on your device.
+        </div>
         
         {messages.map((msg) => {
           const isMe = msg.sender_id === currentUserId;
@@ -159,7 +212,7 @@ export default function ChatRoomPage() {
                   ? 'bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] text-white rounded-br-sm' 
                   : 'bg-gray-200 dark:bg-gray-800 text-[var(--foreground)] rounded-bl-sm'
               }`}>
-                <p className="text-sm">{msg.content}</p>
+                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                 <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-white/70' : 'text-[var(--foreground)]/50'}`}>
                   {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
@@ -180,7 +233,7 @@ export default function ChatRoomPage() {
             <Input 
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..." 
+              placeholder="Type a secure message..." 
               className="pl-4 pr-10 rounded-full bg-[var(--background)] border-none h-12"
             />
             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 text-[var(--foreground)]/50 rounded-full h-10 w-10">
@@ -197,8 +250,8 @@ export default function ChatRoomPage() {
       {showGifts && <GiftPicker onClose={() => setShowGifts(false)} onSendGift={handleSendGift} />}
       
       {/* Call Overlays */}
-      {activeCall === 'video' && <VideoCall receiverName="Aisha Sharma" onEndCall={() => setActiveCall(null)} />}
-      {activeCall === 'audio' && <AudioCall receiverName="Aisha Sharma" onEndCall={() => setActiveCall(null)} />}
+      {activeCall === 'video' && <VideoCall receiverName={receiverProfile?.full_name || 'User'} onEndCall={() => setActiveCall(null)} />}
+      {activeCall === 'audio' && <AudioCall receiverName={receiverProfile?.full_name || 'User'} onEndCall={() => setActiveCall(null)} />}
 
     </div>
   );

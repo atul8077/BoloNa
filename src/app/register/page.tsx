@@ -43,8 +43,8 @@ export default function RegisterPage() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Registration successful! Please check your email.");
-      router.push("/login");
+      toast.success("Registration successful!");
+      router.push("/home");
     }
   }
 
