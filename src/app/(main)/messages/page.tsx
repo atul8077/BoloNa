@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Check, CheckCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -20,58 +20,61 @@ export default function MessagesListPage() {
         return;
       }
       
-      const convos = [];
-      const userIdsToFetch = new Set<string>();
-      
-      // Scan localStorage for chat keys
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('chat_') && key.includes(user.id)) {
-          try {
-            const raw = localStorage.getItem(key);
-            if (raw) {
-              const messages = JSON.parse(raw);
-              if (messages.length > 0) {
-                const lastMsg = messages[messages.length - 1];
-                const parts = key.replace('chat_', '').split('_');
-                const otherId = parts[0] === user.id ? parts[1] : parts[0];
-                
-                userIdsToFetch.add(otherId);
-                convos.push({
-                  otherId,
-                  lastMessage: lastMsg.content,
-                  time: lastMsg.created_at
-                });
-              }
-            }
-          } catch(e) {
-            console.error("Error parsing chat key", key);
-          }
+      // Fetch all messages involving the current user
+      const { data: messages, error } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("Failed to fetch messages:", error);
+        setLoading(false);
+        return;
+      }
+
+      // Group by conversation partner
+      const latestMessages = new Map<string, any>();
+      const unreadCounts = new Map<string, number>();
+
+      for (const msg of messages || []) {
+        const partnerId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
+        
+        if (!latestMessages.has(partnerId)) {
+          latestMessages.set(partnerId, msg);
+        }
+        
+        if (msg.receiver_id === user.id && msg.status !== 'read') {
+          unreadCounts.set(partnerId, (unreadCounts.get(partnerId) || 0) + 1);
         }
       }
 
-      if (userIdsToFetch.size > 0) {
+      const partnerIds = Array.from(latestMessages.keys());
+
+      if (partnerIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
           .select('id, full_name, username, avatar_url')
-          .in('id', Array.from(userIdsToFetch));
+          .in('id', partnerIds);
 
         if (profiles) {
-          const enrichedConvos = convos.map(c => {
-            const profile = profiles.find(p => p.id === c.otherId);
+          const enrichedConvos = profiles.map(profile => {
+            const msg = latestMessages.get(profile.id);
+            const unread = unreadCounts.get(profile.id) || 0;
             return {
-              id: c.otherId,
-              name: profile?.full_name || 'Anonymous',
-              username: profile?.username || 'user',
-              image: profile?.avatar_url || `https://api.dicebear.com/9.x/avataaars/svg?seed=${profile?.full_name || 'user'}`,
-              lastMessage: c.lastMessage,
-              time: new Date(c.time).toLocaleDateString(),
-              unread: 0,
+              id: profile.id,
+              name: profile.full_name || 'Anonymous',
+              username: profile.username || 'user',
+              image: profile.avatar_url || `https://api.dicebear.com/9.x/avataaars/svg?seed=${profile.full_name || 'user'}`,
+              lastMessage: msg.content,
+              time: new Date(msg.created_at).toLocaleDateString(),
+              status: msg.sender_id === user.id ? msg.status : null,
+              unread,
               isOnline: false
             };
           });
           // Sort by time descending (latest first)
-          enrichedConvos.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+          enrichedConvos.sort((a, b) => new Date(latestMessages.get(b.id).created_at).getTime() - new Date(latestMessages.get(a.id).created_at).getTime());
           setConversations(enrichedConvos);
         }
       }
@@ -121,9 +124,25 @@ export default function MessagesListPage() {
                   </div>
                   
                   <div className="flex items-center justify-between">
-                    <p className="text-sm truncate pr-4 text-[var(--foreground)]/60">
+                    <p className={`text-sm truncate pr-4 ${conv.unread > 0 ? "font-semibold text-[var(--foreground)]" : "text-[var(--foreground)]/60"}`}>
                       {conv.lastMessage}
                     </p>
+                    
+                    <div className="flex items-center space-x-1 shrink-0">
+                      {conv.unread > 0 ? (
+                        <div className="w-5 h-5 rounded-full bg-[var(--primary)] text-white text-[10px] font-bold flex items-center justify-center">
+                          {conv.unread}
+                        </div>
+                      ) : conv.status ? (
+                        conv.status === 'read' ? (
+                          <CheckCheck className="w-4 h-4 text-blue-500" />
+                        ) : conv.status === 'delivered' ? (
+                          <CheckCheck className="w-4 h-4 text-[var(--foreground)]/50" />
+                        ) : (
+                          <Check className="w-4 h-4 text-[var(--foreground)]/50" />
+                        )
+                      ) : null}
+                    </div>
                   </div>
                 </div>
 

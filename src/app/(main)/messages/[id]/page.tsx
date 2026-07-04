@@ -8,14 +8,16 @@ import { supabase } from "@/lib/supabase";
 import { VideoCall } from "@/components/calls/VideoCall";
 import { AudioCall } from "@/components/calls/AudioCall";
 import { GiftPicker } from "@/components/ui/gift-picker";
-import { Gift, ArrowLeft, Phone, Video, Send, Smile, MoreVertical } from "lucide-react";
+import { Gift, ArrowLeft, Phone, Video, Send, Smile, MoreVertical, Check, CheckCheck } from "lucide-react";
 import toast from "react-hot-toast";
 import { AGORA_APP_ID } from "@/lib/agora";
 
 interface Message {
   id: string;
   sender_id: string;
+  receiver_id: string;
   content: string;
+  status: string; // 'sent', 'delivered', 'read'
   created_at: string;
 }
 
@@ -36,14 +38,8 @@ export default function ChatRoomPage() {
   const rtmClientRef = React.useRef<any>(null);
   const chatChannelName = React.useMemo(() => `chat_${[currentUserId || 'wait', receiverId].sort().join('_')}`, [currentUserId, receiverId]);
 
-  // Helper to generate a unique conversation key for local storage
-  const getConversationKey = (userA: string, userB: string) => {
-    return `chat_${[userA, userB].sort().join('_')}`;
-  };
-
   React.useEffect(() => {
     async function initChat() {
-      // 1. Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
@@ -51,7 +47,7 @@ export default function ChatRoomPage() {
       }
       setCurrentUserId(user.id);
 
-      // 2. Fetch Receiver Profile info
+      // Fetch Receiver Profile info
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
@@ -59,44 +55,64 @@ export default function ChatRoomPage() {
         .single();
       if (profile) setReceiverProfile(profile);
 
-      // 3. Load Local Messages
-      const chatKey = getConversationKey(user.id, receiverId);
-      const savedMessages = localStorage.getItem(chatKey);
-      if (savedMessages) {
-        try {
-          setMessages(JSON.parse(savedMessages));
-        } catch(e) {
-          console.error("Error parsing local messages");
+      // Fetch existing messages from DB
+      const { data: dbMessages } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${user.id})`)
+        .order('created_at', { ascending: true });
+
+      if (dbMessages) {
+        setMessages(dbMessages);
+        
+        // Mark unread received messages as 'read'
+        const unreadIds = dbMessages.filter(m => m.receiver_id === user.id && m.status !== 'read').map(m => m.id);
+        if (unreadIds.length > 0) {
+          await supabase.from('messages').update({ status: 'read' }).in('id', unreadIds);
         }
       }
 
-      // 4. Setup Agora RTM for Realtime P2P
+      // Setup Supabase Realtime for DB sync (to track message statuses and new messages)
+      const messageSyncChannel = supabase.channel(`messages_${chatChannelName}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages' },
+          (payload) => {
+            const newMsg = payload.new as Message;
+            if (
+              (newMsg.sender_id === user.id && newMsg.receiver_id === receiverId) ||
+              (newMsg.sender_id === receiverId && newMsg.receiver_id === user.id)
+            ) {
+              setMessages(prev => {
+                if (prev.some(m => m.id === newMsg.id)) return prev;
+                return [...prev, newMsg];
+              });
+
+              // Mark as read if we received it while chat is open
+              if (newMsg.receiver_id === user.id && newMsg.status !== 'read') {
+                supabase.from('messages').update({ status: 'read' }).eq('id', newMsg.id).then();
+              }
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'messages' },
+          (payload) => {
+            const updatedMsg = payload.new as Message;
+            setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m));
+          }
+        )
+        .subscribe();
+
+      // Setup Agora RTM for Call Rings (and fallback messaging transmission if wanted)
       if (AGORA_APP_ID && typeof window !== 'undefined') {
         try {
           const AgoraRTM = (await import('agora-rtm-sdk')).default;
-          
           const rtmClient = new AgoraRTM.RTM(AGORA_APP_ID, user.id);
           
           rtmClient.addEventListener('message', (event: any) => {
-            // Check if message is for this chat
-            if (event.channelName === chatKey) {
-              try {
-                const incomingMessage = JSON.parse(event.message) as Message;
-                
-                // Save to state and local storage
-                setMessages((prev) => {
-                  // prevent duplicates
-                  if (prev.some(m => m.id === incomingMessage.id)) return prev;
-                  
-                  const updated = [...prev, incomingMessage];
-                  localStorage.setItem(chatKey, JSON.stringify(updated));
-                  return updated;
-                });
-              } catch(e) {
-                console.error("Failed to parse incoming RTM message");
-              }
-            } else if (event.channelName === `call_ring_${user.id}`) {
-              // Handle incoming call rings
+             if (event.channelName === `call_ring_${user.id}`) {
               try {
                 const callInfo = JSON.parse(event.message);
                 if (callInfo.type === 'ring') {
@@ -117,31 +133,27 @@ export default function ChatRoomPage() {
           });
 
           await rtmClient.login();
-          
-          // Subscribe to the shared chat channel for messages
-          await rtmClient.subscribe(chatKey);
-          
-          // Subscribe to personal channel for call rings
           await rtmClient.subscribe(`call_ring_${user.id}`);
-          
           rtmClientRef.current = rtmClient;
-          console.log("Agora RTM Connected");
-          
         } catch (error) {
           console.error("Failed to initialize Agora RTM:", error);
-          toast.error("Real-time messaging is disconnected.");
         }
       }
+
+      return () => {
+        supabase.removeChannel(messageSyncChannel);
+      };
     }
 
-    initChat();
+    const cleanupPromise = initChat();
 
     return () => {
       if (rtmClientRef.current) {
         rtmClientRef.current.logout();
       }
+      cleanupPromise.then(cleanup => cleanup && cleanup());
     };
-  }, [receiverId, router]);
+  }, [receiverId, router, chatChannelName]);
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -151,61 +163,61 @@ export default function ChatRoomPage() {
     e.preventDefault();
     if (!newMessage.trim() || !currentUserId) return;
 
+    const tempId = Date.now().toString();
     const msg: Message = {
-      id: Date.now().toString(),
+      id: tempId, // temp id
       sender_id: currentUserId,
+      receiver_id: receiverId,
       content: newMessage,
+      status: 'sent',
       created_at: new Date().toISOString(),
     };
 
-    // 1. Update State
-    const updatedMessages = [...messages, msg];
-    setMessages(updatedMessages);
+    // Optimistic UI update
+    setMessages(prev => [...prev, msg]);
     setNewMessage("");
 
-    // 2. Save to Local Storage
-    const chatKey = getConversationKey(currentUserId, receiverId);
-    localStorage.setItem(chatKey, JSON.stringify(updatedMessages));
+    // Insert into DB
+    const { data: insertedData, error } = await supabase
+      .from('messages')
+      .insert({
+        sender_id: currentUserId,
+        receiver_id: receiverId,
+        content: msg.content,
+        status: 'sent'
+      })
+      .select()
+      .single();
 
-    // 3. Broadcast to receiver via Agora RTM
-    if (rtmClientRef.current && AGORA_APP_ID) {
-      try {
-        await rtmClientRef.current.publish(chatKey, JSON.stringify(msg));
-      } catch (e) {
-        console.error("Failed to send RTM message", e);
-        toast.error("Failed to send message. You might be disconnected.");
-      }
-    } else if (!AGORA_APP_ID) {
-      toast.error("Agora App ID is missing.");
+    if (error) {
+      toast.error("Failed to send message");
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+    } else {
+      // Replace optimistic message with real DB message
+      setMessages(prev => prev.map(m => m.id === tempId ? insertedData : m));
     }
   };
 
-  const handleSendGift = (giftId: number, coins: number) => {
+  const handleSendGift = async (giftId: number, coins: number) => {
     if (!currentUserId) return;
     
-    const msg: Message = {
-      id: Date.now().toString(),
+    const { error } = await supabase.from('messages').insert({
       sender_id: currentUserId,
+      receiver_id: receiverId,
       content: `🎁 Sent a gift (${coins} coins)`,
-      created_at: new Date().toISOString(),
-    };
+      status: 'sent'
+    });
 
-    const updatedMessages = [...messages, msg];
-    setMessages(updatedMessages);
-    
-    const chatKey = getConversationKey(currentUserId, receiverId);
-    localStorage.setItem(chatKey, JSON.stringify(updatedMessages));
-
-    if (rtmClientRef.current) {
-      rtmClientRef.current.publish(chatKey, JSON.stringify(msg)).catch(console.error);
+    if (error) {
+      toast.error("Failed to send gift message");
+    } else {
+      toast.success(`Gift sent successfully! (-${coins} coins)`);
     }
-    
-    toast.success(`Gift sent successfully! (-${coins} coins)`);
   };
 
   const startCall = async (type: 'audio' | 'video') => {
     if (!currentUserId || !rtmClientRef.current) {
-      toast.error("Calling is currently unavailable");
+      toast.error("Calling is currently unavailable (Waiting for Agora Connect)");
       return;
     }
     
@@ -220,6 +232,15 @@ export default function ChatRoomPage() {
         callerId: currentUserId,
         callerName: myName
       }));
+      
+      // Log Call initiation to DB
+      await supabase.from('call_logs').insert({
+        caller_id: currentUserId,
+        receiver_id: receiverId,
+        call_type: type,
+        status: 'initiated'
+      });
+
       setActiveCall(type);
     } catch (e) {
       console.error("Failed to ring user", e);
@@ -231,7 +252,7 @@ export default function ChatRoomPage() {
     <div className="flex flex-col h-[calc(100vh-80px)] md:h-[calc(100vh-100px)] max-w-3xl mx-auto w-full bg-white/50 dark:bg-[#0F172A]/50 rounded-2xl overflow-hidden shadow-2xl border border-[var(--foreground)]/10 relative">
       
       {/* Chat Header */}
-      <div className="flex items-center justify-between p-4 border-b border-[var(--foreground)]/10 bg-white/70 dark:bg-[#0F172A]/70 backdrop-blur-md">
+      <div className="flex items-center justify-between p-4 border-b border-[var(--foreground)]/10 bg-white/70 dark:bg-[#0F172A]/70 backdrop-blur-md z-10">
         <div className="flex items-center space-x-3">
           <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full md:hidden">
             <ArrowLeft className="w-5 h-5" />
@@ -266,22 +287,35 @@ export default function ChatRoomPage() {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="text-center text-xs text-[var(--foreground)]/40 my-4">
-          Chat securely via Agora. Messages are stored only on your device.
+          Chat is end-to-end synced securely.
         </div>
         
         {messages.map((msg) => {
           const isMe = msg.sender_id === currentUserId;
           return (
             <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${
+              <div className={`max-w-[75%] rounded-2xl px-4 py-2 flex flex-col ${
                 isMe 
                   ? 'bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] text-white rounded-br-sm' 
                   : 'bg-gray-200 dark:bg-gray-800 text-[var(--foreground)] rounded-bl-sm'
               }`}>
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-white/70' : 'text-[var(--foreground)]/50'}`}>
-                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                <div className={`flex items-center justify-end space-x-1 mt-1 ${isMe ? 'text-white/70' : 'text-[var(--foreground)]/50'}`}>
+                  <p className="text-[10px]">
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                  {isMe && (
+                    <span className="shrink-0">
+                      {msg.status === 'read' ? (
+                        <CheckCheck className="w-3 h-3 text-blue-300" />
+                      ) : msg.status === 'delivered' ? (
+                        <CheckCheck className="w-3 h-3" />
+                      ) : (
+                        <Check className="w-3 h-3" />
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -290,7 +324,7 @@ export default function ChatRoomPage() {
       </div>
 
       {/* Input Area */}
-      <div className="p-4 border-t border-[var(--foreground)]/10 bg-white/70 dark:bg-[#0F172A]/70 backdrop-blur-md relative">
+      <div className="p-4 border-t border-[var(--foreground)]/10 bg-white/70 dark:bg-[#0F172A]/70 backdrop-blur-md relative z-10">
         <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
           <Button type="button" variant="ghost" size="icon" className="text-[var(--primary)] rounded-full shrink-0" onClick={() => setShowGifts(!showGifts)}>
             <Gift className="w-5 h-5" />
@@ -299,7 +333,7 @@ export default function ChatRoomPage() {
             <Input 
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a secure message..." 
+              placeholder="Type a message..." 
               className="pl-4 pr-10 rounded-full bg-[var(--background)] border-none h-12 focus-visible:ring-1 focus-visible:ring-[var(--primary)]"
             />
             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 text-[var(--foreground)]/50 rounded-full h-10 w-10">

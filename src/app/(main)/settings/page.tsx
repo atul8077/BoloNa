@@ -7,9 +7,42 @@ import { Shield, Lock, Bell, UserX, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { Input } from "@/components/ui/input";
 
 export default function SettingsPage() {
   const router = useRouter();
+  const [username, setUsername] = React.useState("");
+  const [isUpdating, setIsUpdating] = React.useState(false);
+
+  React.useEffect(() => {
+    async function fetchProfile() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('profiles').select('username').eq('id', user.id).single();
+        if (data?.username) setUsername(data.username);
+      }
+    }
+    fetchProfile();
+  }, []);
+
+  const handleUpdateUsername = async () => {
+    if (!username.trim()) return;
+    setIsUpdating(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { error } = await supabase.from('profiles').update({ username: username.trim() }).eq('id', user.id);
+      if (error) {
+        if (error.code === '23505') { // Unique violation
+          toast.error("This username is already taken.");
+        } else {
+          toast.error("Failed to update username.");
+        }
+      } else {
+        toast.success("Username updated successfully!");
+      }
+    }
+    setIsUpdating(false);
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -26,6 +59,32 @@ export default function SettingsPage() {
 
       <div className="space-y-6">
         
+        {/* Security & Privacy */}
+        {/* Profile Settings */}
+        <Card className="border-none shadow-lg bg-white/50 dark:bg-[#0F172A]/50 backdrop-blur-md">
+          <CardHeader>
+            <CardTitle className="flex items-center text-lg"><UserX className="w-5 h-5 mr-2 text-[var(--primary)]" /> Profile Settings</CardTitle>
+            <CardDescription>Update your personal information.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col space-y-2">
+              <label className="text-sm font-medium">Username</label>
+              <div className="flex items-center space-x-2">
+                <Input 
+                  value={username} 
+                  onChange={(e) => setUsername(e.target.value)} 
+                  placeholder="Enter a unique username"
+                  className="max-w-md"
+                />
+                <Button onClick={handleUpdateUsername} disabled={isUpdating}>
+                  {isUpdating ? "Saving..." : "Save"}
+                </Button>
+              </div>
+              <p className="text-xs text-[var(--foreground)]/60">Your username must be unique. This is how friends can find you.</p>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Security & Privacy */}
         <Card className="border-none shadow-lg bg-white/50 dark:bg-[#0F172A]/50 backdrop-blur-md">
           <CardHeader>
