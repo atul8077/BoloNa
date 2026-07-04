@@ -10,6 +10,7 @@ import { AudioCall } from "@/components/calls/AudioCall";
 import { GiftPicker } from "@/components/ui/gift-picker";
 import { Gift, ArrowLeft, Phone, Video, Send, Smile, MoreVertical } from "lucide-react";
 import toast from "react-hot-toast";
+import { AGORA_APP_ID } from "@/lib/agora";
 
 interface Message {
   id: string;
@@ -32,7 +33,8 @@ export default function ChatRoomPage() {
   const [showGifts, setShowGifts] = React.useState(false);
   
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
-  const channelRef = React.useRef<any>(null);
+  const rtmClientRef = React.useRef<any>(null);
+  const chatChannelName = React.useMemo(() => `chat_${[currentUserId || 'wait', receiverId].sort().join('_')}`, [currentUserId, receiverId]);
 
   // Helper to generate a unique conversation key for local storage
   const getConversationKey = (userA: string, userB: string) => {
@@ -49,7 +51,7 @@ export default function ChatRoomPage() {
       }
       setCurrentUserId(user.id);
 
-      // 2. Fetch Receiver Profile info (for Header)
+      // 2. Fetch Receiver Profile info
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
@@ -68,34 +70,75 @@ export default function ChatRoomPage() {
         }
       }
 
-      // 4. Setup Supabase Broadcast for Realtime P2P
-      const channel = supabase.channel(`chat_room_${chatKey}`);
-      channel.on('broadcast', { event: 'new_message' }, (payload) => {
-        const incomingMessage = payload.payload as Message;
-        
-        // Save to state
-        setMessages((prev) => {
-          const updated = [...prev, incomingMessage];
-          // Save to local storage
-          localStorage.setItem(chatKey, JSON.stringify(updated));
-          return updated;
-        });
-      });
+      // 4. Setup Agora RTM for Realtime P2P
+      if (AGORA_APP_ID && typeof window !== 'undefined') {
+        try {
+          const AgoraRTM = (await import('agora-rtm-sdk')).default;
+          
+          const rtmClient = new AgoraRTM.RTM(AGORA_APP_ID, user.id);
+          
+          rtmClient.addEventListener('message', (event: any) => {
+            // Check if message is for this chat
+            if (event.channelName === chatKey) {
+              try {
+                const incomingMessage = JSON.parse(event.message) as Message;
+                
+                // Save to state and local storage
+                setMessages((prev) => {
+                  // prevent duplicates
+                  if (prev.some(m => m.id === incomingMessage.id)) return prev;
+                  
+                  const updated = [...prev, incomingMessage];
+                  localStorage.setItem(chatKey, JSON.stringify(updated));
+                  return updated;
+                });
+              } catch(e) {
+                console.error("Failed to parse incoming RTM message");
+              }
+            } else if (event.channelName === `call_ring_${user.id}`) {
+              // Handle incoming call rings
+              try {
+                const callInfo = JSON.parse(event.message);
+                if (callInfo.type === 'ring') {
+                  toast((t) => (
+                    <div className="flex flex-col space-y-2">
+                      <span className="font-bold">{callInfo.callerName} is calling...</span>
+                      <div className="flex space-x-2">
+                        <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={() => { setActiveCall(callInfo.callType); toast.dismiss(t.id); }}>Accept</Button>
+                        <Button size="sm" variant="destructive" onClick={() => toast.dismiss(t.id)}>Decline</Button>
+                      </div>
+                    </div>
+                  ), { duration: 30000 });
+                }
+              } catch(e) {
+                console.error("Failed to parse ring");
+              }
+            }
+          });
 
-      channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log("Connected to P2P Chat Room");
+          await rtmClient.login();
+          
+          // Subscribe to the shared chat channel for messages
+          await rtmClient.subscribe(chatKey);
+          
+          // Subscribe to personal channel for call rings
+          await rtmClient.subscribe(`call_ring_${user.id}`);
+          
+          rtmClientRef.current = rtmClient;
+          console.log("Agora RTM Connected");
+          
+        } catch (error) {
+          console.error("Failed to initialize Agora RTM:", error);
+          toast.error("Real-time messaging is disconnected.");
         }
-      });
-
-      channelRef.current = channel;
+      }
     }
 
     initChat();
 
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+      if (rtmClientRef.current) {
+        rtmClientRef.current.logout();
       }
     };
   }, [receiverId, router]);
@@ -124,13 +167,16 @@ export default function ChatRoomPage() {
     const chatKey = getConversationKey(currentUserId, receiverId);
     localStorage.setItem(chatKey, JSON.stringify(updatedMessages));
 
-    // 3. Broadcast to receiver
-    if (channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'new_message',
-        payload: msg
-      });
+    // 3. Broadcast to receiver via Agora RTM
+    if (rtmClientRef.current && AGORA_APP_ID) {
+      try {
+        await rtmClientRef.current.publish(chatKey, JSON.stringify(msg));
+      } catch (e) {
+        console.error("Failed to send RTM message", e);
+        toast.error("Failed to send message. You might be disconnected.");
+      }
+    } else if (!AGORA_APP_ID) {
+      toast.error("Agora App ID is missing.");
     }
   };
 
@@ -150,15 +196,35 @@ export default function ChatRoomPage() {
     const chatKey = getConversationKey(currentUserId, receiverId);
     localStorage.setItem(chatKey, JSON.stringify(updatedMessages));
 
-    if (channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'new_message',
-        payload: msg
-      });
+    if (rtmClientRef.current) {
+      rtmClientRef.current.publish(chatKey, JSON.stringify(msg)).catch(console.error);
     }
     
     toast.success(`Gift sent successfully! (-${coins} coins)`);
+  };
+
+  const startCall = async (type: 'audio' | 'video') => {
+    if (!currentUserId || !rtmClientRef.current) {
+      toast.error("Calling is currently unavailable");
+      return;
+    }
+    
+    const profileRes = await supabase.from('profiles').select('full_name').eq('id', currentUserId).single();
+    const myName = profileRes.data?.full_name || 'Someone';
+
+    // Ring the receiver
+    try {
+      await rtmClientRef.current.publish(`call_ring_${receiverId}`, JSON.stringify({
+        type: 'ring',
+        callType: type,
+        callerId: currentUserId,
+        callerName: myName
+      }));
+      setActiveCall(type);
+    } catch (e) {
+      console.error("Failed to ring user", e);
+      toast.error("Could not place the call.");
+    }
   };
 
   return (
@@ -174,7 +240,7 @@ export default function ChatRoomPage() {
             <img 
               src={receiverProfile?.avatar_url || `https://api.dicebear.com/9.x/avataaars/svg?seed=${receiverProfile?.full_name || 'user'}`} 
               alt="Avatar" 
-              className="w-10 h-10 rounded-full object-cover" 
+              className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-800" 
             />
             <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border border-white rounded-full" />
           </div>
@@ -185,10 +251,10 @@ export default function ChatRoomPage() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <Button variant="ghost" size="icon" className="rounded-full text-[var(--primary)]" onClick={() => setActiveCall('audio')}>
+          <Button variant="ghost" size="icon" className="rounded-full text-[var(--primary)]" onClick={() => startCall('audio')}>
             <Phone className="w-5 h-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="rounded-full text-[var(--primary)]" onClick={() => setActiveCall('video')}>
+          <Button variant="ghost" size="icon" className="rounded-full text-[var(--primary)]" onClick={() => startCall('video')}>
             <Video className="w-5 h-5" />
           </Button>
           <Button variant="ghost" size="icon" className="rounded-full text-[var(--foreground)]/60">
@@ -200,7 +266,7 @@ export default function ChatRoomPage() {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="text-center text-xs text-[var(--foreground)]/40 my-4">
-          Chat securely. Messages are stored only on your device.
+          Chat securely via Agora. Messages are stored only on your device.
         </div>
         
         {messages.map((msg) => {
@@ -234,13 +300,13 @@ export default function ChatRoomPage() {
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="Type a secure message..." 
-              className="pl-4 pr-10 rounded-full bg-[var(--background)] border-none h-12"
+              className="pl-4 pr-10 rounded-full bg-[var(--background)] border-none h-12 focus-visible:ring-1 focus-visible:ring-[var(--primary)]"
             />
             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 text-[var(--foreground)]/50 rounded-full h-10 w-10">
               <Smile className="w-5 h-5" />
             </Button>
           </div>
-          <Button type="submit" disabled={!newMessage.trim()} className="bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] text-white rounded-full h-12 w-12 shrink-0 border-none">
+          <Button type="submit" disabled={!newMessage.trim()} className="bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] text-white rounded-full h-12 w-12 shrink-0 border-none hover:opacity-90">
             <Send className="w-5 h-5" />
           </Button>
         </form>
@@ -250,8 +316,8 @@ export default function ChatRoomPage() {
       {showGifts && <GiftPicker onClose={() => setShowGifts(false)} onSendGift={handleSendGift} />}
       
       {/* Call Overlays */}
-      {activeCall === 'video' && <VideoCall receiverName={receiverProfile?.full_name || 'User'} onEndCall={() => setActiveCall(null)} />}
-      {activeCall === 'audio' && <AudioCall receiverName={receiverProfile?.full_name || 'User'} onEndCall={() => setActiveCall(null)} />}
+      {activeCall === 'video' && <VideoCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} onEndCall={() => setActiveCall(null)} />}
+      {activeCall === 'audio' && <AudioCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} onEndCall={() => setActiveCall(null)} />}
 
     </div>
   );

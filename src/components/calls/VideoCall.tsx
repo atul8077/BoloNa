@@ -3,41 +3,113 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react";
-// Import Agora (commented out for UI stub until API keys are wired)
-// import AgoraRTC, { ICameraVideoTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
+import { AGORA_APP_ID } from "@/lib/agora";
+import AgoraRTC, { ICameraVideoTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
+import { 
+  AgoraRTCProvider, 
+  useRTCClient, 
+  useLocalMicrophoneTrack, 
+  useLocalCameraTrack, 
+  useJoin, 
+  usePublish, 
+  useRemoteUsers, 
+  useRemoteAudioTracks, 
+  useRemoteVideoTracks,
+  RemoteUser,
+  LocalVideoTrack
+} from "agora-rtc-react";
 
 interface VideoCallProps {
   onEndCall: () => void;
   receiverName: string;
+  channelName: string; // Add channel name
 }
 
-export function VideoCall({ onEndCall, receiverName }: VideoCallProps) {
+// Inner component that uses Agora hooks
+function VideoCallInner({ onEndCall, receiverName, channelName }: VideoCallProps) {
   const [isMuted, setIsMuted] = React.useState(false);
   const [isVideoOff, setIsVideoOff] = React.useState(false);
+  const [joined, setJoined] = React.useState(false);
+
+  // Setup local tracks
+  const { localMicrophoneTrack } = useLocalMicrophoneTrack();
+  const { localCameraTrack } = useLocalCameraTrack();
+  
+  // Join the channel automatically
+  useJoin(
+    {
+      appid: AGORA_APP_ID,
+      channel: channelName,
+      token: null, // Test without token
+      uid: null,
+    },
+    joined
+  );
+
+  React.useEffect(() => {
+    if (AGORA_APP_ID) {
+      setJoined(true);
+    }
+  }, []);
+
+  // Publish tracks
+  usePublish([localMicrophoneTrack, localCameraTrack]);
+
+  // Handle remote users
+  const remoteUsers = useRemoteUsers();
+  const { audioTracks } = useRemoteAudioTracks(remoteUsers);
+  
+  // Play remote audio
+  React.useEffect(() => {
+    audioTracks.map((track) => track.play());
+  }, [audioTracks]);
+
+  // Handle mute/unmute
+  React.useEffect(() => {
+    if (localMicrophoneTrack) {
+      localMicrophoneTrack.setMuted(isMuted);
+    }
+  }, [isMuted, localMicrophoneTrack]);
+
+  React.useEffect(() => {
+    if (localCameraTrack) {
+      localCameraTrack.setMuted(isVideoOff);
+    }
+  }, [isVideoOff, localCameraTrack]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black text-white animate-in zoom-in-95 duration-300">
       
-      {/* Remote Video Placeholder */}
+      {/* Remote Video */}
       <div className="flex-1 relative flex items-center justify-center bg-gray-900">
-        <img src="https://i.pravatar.cc/500?u=aisha" alt="Remote" className="absolute inset-0 w-full h-full object-cover opacity-60" />
-        <div className="z-10 text-center">
-          <h2 className="text-3xl font-bold">{receiverName}</h2>
-          <p className="text-white/70 animate-pulse">00:15</p>
-        </div>
+        {remoteUsers.length > 0 ? (
+          <div className="absolute inset-0 w-full h-full">
+            <RemoteUser user={remoteUsers[0]} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+        ) : (
+          <div className="text-center z-10 flex flex-col items-center">
+            <div className="w-24 h-24 mb-4 rounded-full bg-gray-700 animate-pulse" />
+            <h2 className="text-3xl font-bold mb-2">Calling {receiverName}...</h2>
+            <p className="text-white/70">Waiting for them to answer</p>
+          </div>
+        )}
       </div>
 
       {/* Local Video Placeholder (Picture in Picture) */}
-      <div className="absolute top-8 right-8 w-32 h-48 bg-gray-800 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl">
+      <div className="absolute top-8 right-8 w-32 h-48 bg-gray-800 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl z-20">
          {isVideoOff ? (
            <div className="w-full h-full flex items-center justify-center bg-gray-900"><VideoOff className="w-8 h-8 opacity-50" /></div>
          ) : (
-           <img src="https://i.pravatar.cc/300?u=me" alt="Local" className="w-full h-full object-cover" />
+           localCameraTrack ? (
+             <LocalVideoTrack track={localCameraTrack} play={true} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+           ) : (
+             <div className="w-full h-full flex items-center justify-center bg-gray-900 animate-pulse" />
+           )
          )}
       </div>
 
       {/* Controls */}
-      <div className="h-24 bg-gradient-to-t from-black to-transparent flex items-center justify-center space-x-6 pb-6 absolute bottom-0 left-0 right-0">
+      <div className="h-24 bg-gradient-to-t from-black to-transparent flex items-center justify-center space-x-6 pb-6 absolute bottom-0 left-0 right-0 z-20">
         <Button 
           variant="outline" 
           size="icon" 
@@ -51,7 +123,7 @@ export function VideoCall({ onEndCall, receiverName }: VideoCallProps) {
           variant="default" 
           size="icon" 
           className="rounded-full h-16 w-16 bg-red-600 hover:bg-red-700 shadow-[0_0_20px_rgba(220,38,38,0.5)]"
-          onClick={onEndCall}
+          onClick={() => { setJoined(false); onEndCall(); }}
         >
           <PhoneOff className="w-8 h-8" />
         </Button>
@@ -67,5 +139,28 @@ export function VideoCall({ onEndCall, receiverName }: VideoCallProps) {
       </div>
 
     </div>
+  );
+}
+
+// Wrapper to provide Agora Client
+export function VideoCall(props: VideoCallProps) {
+  const client = useRTCClient(AgoraRTC.createClient({ codec: "vp8", mode: "rtc" }));
+
+  if (!AGORA_APP_ID) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 text-white">
+        <div className="text-center p-8 bg-gray-800 rounded-xl max-w-md">
+          <h2 className="text-xl font-bold text-red-400 mb-4">Agora App ID Missing</h2>
+          <p className="mb-6">Please add NEXT_PUBLIC_AGORA_APP_ID to your .env.local file to enable Video Calls.</p>
+          <Button onClick={props.onEndCall}>Close</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <AgoraRTCProvider client={client}>
+      <VideoCallInner {...props} />
+    </AgoraRTCProvider>
   );
 }
