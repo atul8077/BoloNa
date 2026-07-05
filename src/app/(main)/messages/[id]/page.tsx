@@ -195,6 +195,23 @@ export default function ChatRoomPage() {
     } else {
       // Replace optimistic message with real DB message
       setMessages(prev => prev.map(m => m.id === tempId ? insertedData : m));
+
+      // Trigger Backend Push Notification
+      const profileRes = await supabase.from('profiles').select('full_name').eq('id', currentUserId).single();
+      const myName = profileRes.data?.full_name || 'Someone';
+
+      fetch('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receiverId: receiverId,
+          payload: {
+            title: `New message from ${myName}`,
+            body: msg.content,
+            url: `/messages/${currentUserId}`
+          }
+        })
+      }).catch(console.error);
     }
   };
 
@@ -240,6 +257,20 @@ export default function ChatRoomPage() {
         call_type: type,
         status: 'initiated'
       });
+
+      // Trigger Backend Push Notification for offline ring
+      fetch('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receiverId: receiverId,
+          payload: {
+            title: `Incoming ${type} call from ${myName}`,
+            body: "Tap to answer",
+            url: `/messages/${currentUserId}`
+          }
+        })
+      }).catch(console.error);
 
       setActiveCall(type);
     } catch (e) {
