@@ -120,8 +120,8 @@ export default function ChatRoomPage() {
                     <div className="flex flex-col space-y-2">
                       <span className="font-bold">{callInfo.callerName} is calling...</span>
                       <div className="flex space-x-2">
-                        <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={() => { setActiveCall(callInfo.callType); toast.dismiss(t.id); }}>Accept</Button>
-                        <Button size="sm" variant="destructive" onClick={() => toast.dismiss(t.id)}>Decline</Button>
+                        <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={() => { setActiveCall(callInfo.callType); toast.dismiss(t.id); }}>Answer</Button>
+                        <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600 border-red-200" onClick={() => toast.dismiss(t.id)}>Decline</Button>
                       </div>
                     </div>
                   ), { duration: 30000 });
