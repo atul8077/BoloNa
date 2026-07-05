@@ -82,6 +82,32 @@ export default function MessagesListPage() {
     }
     
     loadConversations();
+
+    let channel: any;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        channel = supabase.channel('messages_list_updater')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
+            () => {
+              loadConversations();
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
+            () => {
+              loadConversations();
+            }
+          )
+          .subscribe();
+      }
+    });
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [router]);
 
   if (loading) {
