@@ -1,3 +1,8 @@
+-- Drop existing tables to avoid conflicts
+DROP TABLE IF EXISTS public.messages CASCADE;
+DROP TABLE IF EXISTS public.call_logs CASCADE;
+DROP TABLE IF EXISTS public.push_subscriptions CASCADE;
+
 -- Create messages table
 CREATE TABLE public.messages (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
