@@ -119,7 +119,7 @@ function AudioCallInner({ onEndCall, receiverName, channelName }: AudioCallProps
 
 // Wrapper to provide Agora Client
 export function AudioCall(props: AudioCallProps) {
-  const client = useRTCClient(AgoraRTC.createClient({ codec: "vp8", mode: "rtc" }));
+  const client = useRTCClient(AgoraRTC.createClient({ codec: "vp8", mode: "rtc" }) as any);
 
   if (!AGORA_APP_ID) {
     return (

@@ -144,7 +144,7 @@ function VideoCallInner({ onEndCall, receiverName, channelName }: VideoCallProps
 
 // Wrapper to provide Agora Client
 export function VideoCall(props: VideoCallProps) {
-  const client = useRTCClient(AgoraRTC.createClient({ codec: "vp8", mode: "rtc" }));
+  const client = useRTCClient(AgoraRTC.createClient({ codec: "vp8", mode: "rtc" }) as any);
 
   if (!AGORA_APP_ID) {
     return (
