@@ -125,7 +125,13 @@ export default function ChatRoomPage() {
       // Setup Agora RTM for Call Rings (and fallback messaging transmission if wanted)
       if (AGORA_APP_ID && typeof window !== 'undefined') {
         try {
-          const AgoraRTM = (await import('agora-rtm-sdk')).default;
+          const AgoraRTMModule = await import('agora-rtm-sdk');
+          const AgoraRTM = AgoraRTMModule.default || AgoraRTMModule;
+          
+          if (!AgoraRTM.RTM) {
+            throw new Error("AgoraRTM.RTM is undefined. Module structure: " + Object.keys(AgoraRTM).join(","));
+          }
+          
           const rtmClient = new AgoraRTM.RTM(AGORA_APP_ID, user.id);
           
           rtmClient.addEventListener('message', (event: any) => {
@@ -156,8 +162,9 @@ export default function ChatRoomPage() {
           await rtmClient.login();
           await rtmClient.subscribe(`call_ring_${user.id}`);
           rtmClientRef.current = rtmClient;
-        } catch (error) {
+        } catch (error: any) {
           console.error("Failed to initialize Agora RTM:", error);
+          toast.error("Agora Error: " + (error.message || String(error)));
         }
       }
 
