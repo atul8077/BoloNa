@@ -54,7 +54,7 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
       appid: AGORA_APP_ID,
       channel: channelName,
       token: rtcToken,
-      uid: currentUserId,
+      uid: null, // Let Agora dynamically assign a numeric UID
     },
     joined
   );
