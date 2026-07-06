@@ -159,7 +159,12 @@ export default function ChatRoomPage() {
             }
           });
 
-          await rtmClient.login();
+          // Fetch RTM Token securely from backend
+          const tokenRes = await fetch(`/api/agora/token?uid=${user.id}&tokenType=rtm`);
+          const tokenData = await tokenRes.json();
+          if (tokenData.error) throw new Error(tokenData.error);
+
+          await rtmClient.login({ token: tokenData.token });
           await rtmClient.subscribe(`call_ring_${user.id}`);
           rtmClientRef.current = rtmClient;
         } catch (error: any) {
@@ -409,8 +414,8 @@ export default function ChatRoomPage() {
       {showGifts && <GiftPicker onClose={() => setShowGifts(false)} onSendGift={handleSendGift} />}
       
       {/* Call Overlays */}
-      {activeCall === 'video' && <VideoCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} onEndCall={() => setActiveCall(null)} />}
-      {activeCall === 'audio' && <AudioCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} onEndCall={() => setActiveCall(null)} />}
+      {activeCall === 'video' && <VideoCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} currentUserId={currentUserId!} onEndCall={() => setActiveCall(null)} />}
+      {activeCall === 'audio' && <AudioCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} currentUserId={currentUserId!} onEndCall={() => setActiveCall(null)} />}
 
     </div>
   );

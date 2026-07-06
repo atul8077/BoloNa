@@ -23,6 +23,7 @@ interface VideoCallProps {
   onEndCall: () => void;
   receiverName: string;
   channelName: string; // Add channel name
+  currentUserId: string;
 }
 
 let outRingtone: HTMLAudioElement | null = null;
@@ -43,37 +44,53 @@ const stopOutRing = () => {
 };
 
 // Inner component that uses Agora hooks
-function VideoCallInner({ onEndCall, receiverName, channelName }: VideoCallProps) {
+function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }: VideoCallProps) {
   const [isMuted, setIsMuted] = React.useState(false);
   const [isVideoOff, setIsVideoOff] = React.useState(false);
   const [joined, setJoined] = React.useState(false);
+  const [rtcToken, setRtcToken] = React.useState<string | null>(null);
 
   // Setup local tracks
   const { localMicrophoneTrack } = useLocalMicrophoneTrack();
   const { localCameraTrack } = useLocalCameraTrack();
   
-  // Join the channel automatically
+  // Get remote users
+  const remoteUsers = useRemoteUsers();
+  
+  // Join the channel automatically once token is available
   useJoin(
     {
       appid: AGORA_APP_ID,
       channel: channelName,
-      token: null, // Test without token
-      uid: null,
+      token: rtcToken,
+      uid: currentUserId,
     },
     joined
   );
 
   React.useEffect(() => {
-    if (AGORA_APP_ID) {
-      setJoined(true);
+    async function fetchToken() {
+      if (!AGORA_APP_ID) return;
+      try {
+        const res = await fetch(`/api/agora/token?uid=${currentUserId}&channelName=${channelName}&tokenType=rtc`);
+        const data = await res.json();
+        if (data.token) {
+          setRtcToken(data.token);
+          setJoined(true);
+        } else {
+          console.error("Failed to fetch RTC token:", data.error);
+        }
+      } catch (err) {
+        console.error("Error fetching RTC token:", err);
+      }
     }
-  }, []);
+    fetchToken();
+  }, [currentUserId, channelName]);
 
   // Publish tracks
   usePublish([localMicrophoneTrack, localCameraTrack]);
 
   // Handle remote users
-  const remoteUsers = useRemoteUsers();
   const { audioTracks } = useRemoteAudioTracks(remoteUsers);
   
   // Play remote audio

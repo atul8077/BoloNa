@@ -14,6 +14,7 @@
     "agora-rtc-react": "^2.5.1",
     "agora-rtc-sdk-ng": "^4.24.5",
     "agora-rtm-sdk": "^2.2.4",
+    "agora-token": "^2.0.5",
     "browser-image-compression": "^2.0.2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
