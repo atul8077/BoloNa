@@ -12,7 +12,8 @@ import {
   useJoin, 
   usePublish, 
   useRemoteUsers, 
-  useRemoteAudioTracks
+  useRemoteAudioTracks,
+  RemoteUser
 } from "agora-rtc-react";
 
 interface AudioCallProps {
