@@ -85,9 +85,15 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   const remoteUsers = useRemoteUsers();
   const { audioTracks } = useRemoteAudioTracks(remoteUsers);
   
-  // Play remote audio
+  // Play remote audio explicitly as fallback
   React.useEffect(() => {
-    audioTracks.map((track) => track.play());
+    audioTracks.forEach((track) => {
+      try {
+        track.play();
+      } catch (e) {
+        console.error("Audio play failed:", e);
+      }
+    });
   }, [audioTracks]);
 
   // Handle mute/unmute
@@ -117,12 +123,19 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
           <img src={`https://api.dicebear.com/9.x/avataaars/svg?seed=${receiverName}`} alt={receiverName} className="relative w-40 h-40 rounded-full border-4 border-white/20 object-cover shadow-2xl z-10 bg-gray-800" />
         </div>
         
-        <div className="text-center">
+        <div className="text-center z-10">
           <h2 className="text-4xl font-bold mb-2">{receiverName}</h2>
           <p className="text-white/70 text-lg">
-            {remoteUsers.length > 0 ? "Connected" : "Ringing..."}
+            {remoteUsers.length > 0 ? "Connected" : "Connecting..."}
           </p>
         </div>
+      </div>
+      
+      {/* Hidden remote users to ensure audio plays correctly via component */}
+      <div className="hidden">
+        {remoteUsers.map(user => (
+          <RemoteUser key={user.uid} user={user} />
+        ))}
       </div>
 
       {/* Controls */}

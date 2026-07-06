@@ -93,9 +93,15 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   // Handle remote users
   const { audioTracks } = useRemoteAudioTracks(remoteUsers);
   
-  // Play remote audio
+  // Play remote audio explicitly as fallback
   React.useEffect(() => {
-    audioTracks.map((track) => track.play());
+    audioTracks.forEach((track) => {
+      try {
+        track.play();
+      } catch (e) {
+        console.error("Audio play failed:", e);
+      }
+    });
   }, [audioTracks]);
 
   // Handle mute/unmute
@@ -127,14 +133,18 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
       {/* Remote Video */}
       <div className="flex-1 relative flex items-center justify-center bg-gray-900">
         {remoteUsers.length > 0 ? (
-          <div className="absolute inset-0 w-full h-full">
-            <RemoteUser user={remoteUsers[0]} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <div className="absolute inset-0 w-full h-full flex flex-wrap">
+            {remoteUsers.map(user => (
+               <div key={user.uid} className="flex-1 min-w-[50%] h-full relative">
+                 <RemoteUser user={user} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+               </div>
+            ))}
           </div>
         ) : (
           <div className="text-center z-10 flex flex-col items-center">
             <div className="w-24 h-24 mb-4 rounded-full bg-gray-700 animate-pulse" />
             <h2 className="text-3xl font-bold mb-2">Calling {receiverName}...</h2>
-            <p className="text-white/70">Waiting for them to answer</p>
+            <p className="text-white/70">Connecting...</p>
           </div>
         )}
       </div>

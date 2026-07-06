@@ -145,13 +145,21 @@ export default function ChatRoomPage() {
                       <span className="font-bold">{callInfo.callerName} is calling...</span>
                       <div className="flex space-x-2">
                         <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={() => { stopRingtone(); setActiveCall(callInfo.callType); toast.dismiss(t.id); }}>Answer</Button>
-                        <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600 border-red-200" onClick={() => { stopRingtone(); toast.dismiss(t.id); }}>Decline</Button>
+                        <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600 border-red-200" onClick={() => { 
+                          stopRingtone(); 
+                          toast.dismiss(t.id);
+                          rtmClient.publish(`call_ring_${callInfo.callerId}`, JSON.stringify({ type: 'end_call' })).catch(console.error);
+                        }}>Decline</Button>
                       </div>
                     </div>
                   ), { duration: 30000 });
                   
                   // Failsafe: stop ringtone after 30 seconds if toast auto-dismisses
                   setTimeout(() => stopRingtone(), 30000);
+                } else if (callInfo.type === 'end_call') {
+                  stopRingtone();
+                  setActiveCall(null);
+                  toast.dismiss(); // dismiss all toasts for simplicity or keep a reference
                 }
               } catch(e) {
                 console.error("Failed to parse ring");
@@ -312,6 +320,19 @@ export default function ChatRoomPage() {
     }
   };
 
+  const handleEndCall = async () => {
+    setActiveCall(null);
+    if (rtmClientRef.current && receiverId) {
+      try {
+        await rtmClientRef.current.publish(`call_ring_${receiverId}`, JSON.stringify({
+          type: 'end_call'
+        }));
+      } catch (e) {
+        console.error("Failed to send end call signal");
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] md:h-[calc(100vh-100px)] max-w-3xl mx-auto w-full bg-white/50 dark:bg-[#0F172A]/50 rounded-2xl overflow-hidden shadow-2xl border border-[var(--foreground)]/10 relative">
       
@@ -414,8 +435,8 @@ export default function ChatRoomPage() {
       {showGifts && <GiftPicker onClose={() => setShowGifts(false)} onSendGift={handleSendGift} />}
       
       {/* Call Overlays */}
-      {activeCall === 'video' && <VideoCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} currentUserId={currentUserId!} onEndCall={() => setActiveCall(null)} />}
-      {activeCall === 'audio' && <AudioCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} currentUserId={currentUserId!} onEndCall={() => setActiveCall(null)} />}
+      {activeCall === 'video' && <VideoCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} currentUserId={currentUserId!} onEndCall={handleEndCall} />}
+      {activeCall === 'audio' && <AudioCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} currentUserId={currentUserId!} onEndCall={handleEndCall} />}
 
     </div>
   );
