@@ -21,6 +21,23 @@ interface Message {
   created_at: string;
 }
 
+let ringtoneAudio: HTMLAudioElement | null = null;
+const playRingtone = () => {
+  if (typeof window !== 'undefined') {
+    if (!ringtoneAudio) {
+      ringtoneAudio = new Audio('/ring.mp3');
+      ringtoneAudio.loop = true;
+    }
+    ringtoneAudio.play().catch(e => console.log('Audio play failed', e));
+  }
+};
+const stopRingtone = () => {
+  if (ringtoneAudio) {
+    ringtoneAudio.pause();
+    ringtoneAudio.currentTime = 0;
+  }
+};
+
 export default function ChatRoomPage() {
   const { id: receiverId } = useParams() as { id: string };
   const router = useRouter();
@@ -116,15 +133,19 @@ export default function ChatRoomPage() {
               try {
                 const callInfo = JSON.parse(event.message);
                 if (callInfo.type === 'ring') {
+                  playRingtone();
                   toast((t) => (
                     <div className="flex flex-col space-y-2">
                       <span className="font-bold">{callInfo.callerName} is calling...</span>
                       <div className="flex space-x-2">
-                        <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={() => { setActiveCall(callInfo.callType); toast.dismiss(t.id); }}>Answer</Button>
-                        <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600 border-red-200" onClick={() => toast.dismiss(t.id)}>Decline</Button>
+                        <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={() => { stopRingtone(); setActiveCall(callInfo.callType); toast.dismiss(t.id); }}>Answer</Button>
+                        <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600 border-red-200" onClick={() => { stopRingtone(); toast.dismiss(t.id); }}>Decline</Button>
                       </div>
                     </div>
                   ), { duration: 30000 });
+                  
+                  // Failsafe: stop ringtone after 30 seconds if toast auto-dismisses
+                  setTimeout(() => stopRingtone(), 30000);
                 }
               } catch(e) {
                 console.error("Failed to parse ring");

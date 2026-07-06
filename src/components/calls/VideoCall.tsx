@@ -25,6 +25,23 @@ interface VideoCallProps {
   channelName: string; // Add channel name
 }
 
+let outRingtone: HTMLAudioElement | null = null;
+const playOutRing = () => {
+  if (typeof window !== 'undefined') {
+    if (!outRingtone) {
+      outRingtone = new Audio('/ring.mp3');
+      outRingtone.loop = true;
+    }
+    outRingtone.play().catch(e => console.log('Audio play failed', e));
+  }
+};
+const stopOutRing = () => {
+  if (outRingtone) {
+    outRingtone.pause();
+    outRingtone.currentTime = 0;
+  }
+};
+
 // Inner component that uses Agora hooks
 function VideoCallInner({ onEndCall, receiverName, channelName }: VideoCallProps) {
   const [isMuted, setIsMuted] = React.useState(false);
@@ -76,6 +93,16 @@ function VideoCallInner({ onEndCall, receiverName, channelName }: VideoCallProps
       localCameraTrack.setMuted(isVideoOff);
     }
   }, [isVideoOff, localCameraTrack]);
+
+  // Handle outgoing ringtone
+  React.useEffect(() => {
+    if (remoteUsers.length === 0) {
+      playOutRing();
+    } else {
+      stopOutRing();
+    }
+    return () => stopOutRing();
+  }, [remoteUsers.length]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black text-white animate-in zoom-in-95 duration-300">

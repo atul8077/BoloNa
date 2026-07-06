@@ -21,6 +21,23 @@ interface AudioCallProps {
   channelName: string;
 }
 
+let outRingtone: HTMLAudioElement | null = null;
+const playOutRing = () => {
+  if (typeof window !== 'undefined') {
+    if (!outRingtone) {
+      outRingtone = new Audio('/ring.mp3');
+      outRingtone.loop = true;
+    }
+    outRingtone.play().catch(e => console.log('Audio play failed', e));
+  }
+};
+const stopOutRing = () => {
+  if (outRingtone) {
+    outRingtone.pause();
+    outRingtone.currentTime = 0;
+  }
+};
+
 function AudioCallInner({ onEndCall, receiverName, channelName }: AudioCallProps) {
   const [isMuted, setIsMuted] = React.useState(false);
   const [isSpeaker, setIsSpeaker] = React.useState(false);
@@ -64,6 +81,16 @@ function AudioCallInner({ onEndCall, receiverName, channelName }: AudioCallProps
       localMicrophoneTrack.setMuted(isMuted);
     }
   }, [isMuted, localMicrophoneTrack]);
+
+  // Handle outgoing ringtone
+  React.useEffect(() => {
+    if (remoteUsers.length === 0) {
+      playOutRing();
+    } else {
+      stopOutRing();
+    }
+    return () => stopOutRing();
+  }, [remoteUsers.length]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gradient-to-br from-indigo-900 via-purple-900 to-black text-white animate-in zoom-in-95 duration-300">
