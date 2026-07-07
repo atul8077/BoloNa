@@ -58,6 +58,26 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   
   // Get remote users
   const remoteUsers = useRemoteUsers();
+
+  // Call duration timer
+  const [callDuration, setCallDuration] = React.useState(0);
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (remoteUsers.length > 0) {
+      interval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [remoteUsers.length]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
   
   // Join the channel automatically once token is available
   useJoin(
@@ -135,6 +155,10 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
       {/* Remote Video */}
       <div className="flex-1 relative flex items-center justify-center bg-gray-900">
         {remoteUsers.length > 0 ? (
+          <>
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/50 px-4 py-1.5 rounded-full text-sm font-mono backdrop-blur-md z-30">
+              {formatTime(callDuration)}
+            </div>
           <div className="absolute inset-0 w-full h-full flex flex-wrap">
             {remoteUsers.map(user => (
                <div key={user.uid} className="flex-1 min-w-[50%] h-full relative">
@@ -142,6 +166,7 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
                </div>
             ))}
           </div>
+        </>
         ) : (
           <div className="text-center z-10 flex flex-col items-center">
             <div className="w-24 h-24 mb-4 rounded-full bg-gray-700 animate-pulse" />

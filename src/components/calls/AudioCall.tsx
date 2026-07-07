@@ -51,6 +51,29 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   // Setup local tracks
   const { localMicrophoneTrack } = useLocalMicrophoneTrack(joined);
   
+  // Get remote users
+  const remoteUsers = useRemoteUsers();
+
+  // Call duration timer
+  const [callDuration, setCallDuration] = React.useState(0);
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (remoteUsers.length > 0) {
+      interval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [remoteUsers.length]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
   // Join the channel automatically once token is available
   useJoin(
     {
@@ -85,7 +108,6 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   usePublish([localMicrophoneTrack]);
 
   // Handle remote users
-  const remoteUsers = useRemoteUsers();
   const { audioTracks } = useRemoteAudioTracks(remoteUsers);
   
   // Play remote audio explicitly as fallback
@@ -128,8 +150,8 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
         
         <div className="text-center z-10">
           <h2 className="text-4xl font-bold mb-2">{receiverName}</h2>
-          <p className="text-white/70 text-lg">
-            {remoteUsers.length > 0 ? "Connected" : "Connecting..."}
+          <p className="text-white/70 text-lg font-mono">
+            {remoteUsers.length > 0 ? formatTime(callDuration) : "Connecting..."}
           </p>
         </div>
       </div>

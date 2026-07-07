@@ -54,9 +54,11 @@ export default function ChatRoomPage() {
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const rtmClientRef = React.useRef<any>(null);
   const chatChannelName = React.useMemo(() => {
-    const id1 = String(currentUserId || 'wait').toLowerCase();
-    const id2 = String(receiverId).toLowerCase();
-    return `chat_${[id1, id2].sort().join('_')}`;
+    // Agora channel max length is 64. UUIDs are 36. 36*2 = 72 (too long).
+    // Remove hyphens and take first 15 chars to ensure uniqueness and stay under 64.
+    const id1 = String(currentUserId || 'wait').toLowerCase().replace(/-/g, '').substring(0, 15);
+    const id2 = String(receiverId).toLowerCase().replace(/-/g, '').substring(0, 15);
+    return `c_${[id1, id2].sort().join('_')}`;
   }, [currentUserId, receiverId]);
 
   React.useEffect(() => {
@@ -177,7 +179,7 @@ export default function ChatRoomPage() {
           if (tokenData.error) throw new Error(tokenData.error);
 
           await rtmClient.login({ token: tokenData.token });
-          await rtmClient.subscribe(`call_ring_${user.id}`);
+          await rtmClient.subscribe(`call_ring_${user.id}`, { withMessage: true, withPresence: false });
           rtmClientRef.current = rtmClient;
         } catch (error: any) {
           console.error("Failed to initialize Agora RTM:", error);
