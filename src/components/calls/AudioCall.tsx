@@ -13,8 +13,11 @@ import {
   usePublish, 
   useRemoteUsers, 
   useRemoteAudioTracks,
-  RemoteUser
+  RemoteUser,
+  useConnectionState,
+  useRTCClient
 } from "agora-rtc-react";
+import toast from "react-hot-toast";
 
 interface AudioCallProps {
   onEndCall: () => void;
@@ -56,6 +59,23 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
 
   // Call duration timer
   const [callDuration, setCallDuration] = React.useState(0);
+  const connectionState = useConnectionState();
+  const rtcClient = useRTCClient();
+
+  // Listen for Agora SDK errors to debug token/connection issues
+  React.useEffect(() => {
+    if (!rtcClient) return;
+    
+    const handleException = (err: any) => {
+      console.error("Agora Exception:", err);
+      toast.error(`Agora SDK Error: ${err?.msg || err?.code || JSON.stringify(err)}`, { duration: 10000 });
+    };
+
+    rtcClient.on("exception", handleException);
+    return () => {
+      rtcClient.off("exception", handleException);
+    };
+  }, [rtcClient]);
   React.useEffect(() => {
     let interval: NodeJS.Timeout;
     if (remoteUsers.length > 0) {
@@ -151,8 +171,11 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
         <div className="text-center z-10">
           <h2 className="text-4xl font-bold mb-2">{receiverName}</h2>
           <p className="text-white/70 text-lg font-mono">
-            {remoteUsers.length > 0 ? formatTime(callDuration) : "Connecting..."}
+            {remoteUsers.length > 0 ? formatTime(callDuration) : `Status: ${connectionState === 'DISCONNECTED' && joined ? 'Connection Failed' : connectionState}`}
           </p>
+          {connectionState === 'DISCONNECTED' && joined && (
+            <p className="text-red-400 text-sm mt-2 max-w-xs mx-auto">Failed to connect. Check your API keys and Network.</p>
+          )}
         </div>
       </div>
       

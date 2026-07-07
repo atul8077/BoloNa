@@ -16,8 +16,10 @@ import {
   useRemoteAudioTracks, 
   useRemoteVideoTracks,
   RemoteUser,
-  LocalVideoTrack
+  LocalVideoTrack,
+  useConnectionState
 } from "agora-rtc-react";
+import toast from "react-hot-toast";
 
 interface VideoCallProps {
   onEndCall: () => void;
@@ -58,8 +60,24 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   
   // Get remote users
   const remoteUsers = useRemoteUsers();
+  const connectionState = useConnectionState();
 
-  // Call duration timer
+  const rtcClient = useRTCClient();
+
+  // Listen for Agora SDK errors to debug token/connection issues
+  React.useEffect(() => {
+    if (!rtcClient) return;
+    
+    const handleException = (err: any) => {
+      console.error("Agora Exception:", err);
+      toast.error(`Agora SDK Error: ${err?.msg || err?.code || JSON.stringify(err)}`, { duration: 10000 });
+    };
+
+    rtcClient.on("exception", handleException);
+    return () => {
+      rtcClient.off("exception", handleException);
+    };
+  }, [rtcClient]);
   const [callDuration, setCallDuration] = React.useState(0);
   React.useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -171,7 +189,10 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
           <div className="text-center z-10 flex flex-col items-center">
             <div className="w-24 h-24 mb-4 rounded-full bg-gray-700 animate-pulse" />
             <h2 className="text-3xl font-bold mb-2">Calling {receiverName}...</h2>
-            <p className="text-white/70">Connecting...</p>
+            <p className="text-white/70">Status: {connectionState === 'DISCONNECTED' && joined ? 'Connection Failed' : connectionState}</p>
+            {connectionState === 'DISCONNECTED' && joined && (
+              <p className="text-red-400 text-sm mt-2 max-w-xs">Failed to connect. Check your API keys and Network.</p>
+            )}
           </div>
         )}
       </div>
