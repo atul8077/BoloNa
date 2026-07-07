@@ -46,8 +46,10 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   const [joined, setJoined] = React.useState(false);
   const [rtcToken, setRtcToken] = React.useState<string | null>(null);
 
+  const [uid] = React.useState(() => Math.floor(Math.random() * 1000000) + 1);
+
   // Setup local tracks
-  const { localMicrophoneTrack } = useLocalMicrophoneTrack();
+  const { localMicrophoneTrack } = useLocalMicrophoneTrack(joined);
   
   // Join the channel automatically once token is available
   useJoin(
@@ -55,7 +57,7 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
       appid: AGORA_APP_ID,
       channel: channelName,
       token: rtcToken,
-      uid: null, // Let Agora dynamically assign a numeric UID
+      uid: uid,
     },
     joined
   );
@@ -64,7 +66,7 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
     async function fetchToken() {
       if (!AGORA_APP_ID) return;
       try {
-        const res = await fetch(`/api/agora/token?uid=${currentUserId}&channelName=${channelName}&tokenType=rtc`);
+        const res = await fetch(`/api/agora/token?uid=${uid}&channelName=${channelName}&tokenType=rtc`);
         const data = await res.json();
         if (data.token) {
           setRtcToken(data.token);
@@ -175,7 +177,8 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
 
 // Wrapper to provide Agora Client
 export function AudioCall(props: AudioCallProps) {
-  const client = useRTCClient(AgoraRTC.createClient({ codec: "vp8", mode: "rtc" }) as any);
+  const [client] = React.useState(() => AgoraRTC.createClient({ codec: "vp8", mode: "rtc" }) as any);
+  const rtcClient = useRTCClient(client);
 
   if (!AGORA_APP_ID) {
     return (
@@ -190,7 +193,7 @@ export function AudioCall(props: AudioCallProps) {
   }
 
   return (
-    <AgoraRTCProvider client={client}>
+    <AgoraRTCProvider client={rtcClient}>
       <AudioCallInner {...props} />
     </AgoraRTCProvider>
   );

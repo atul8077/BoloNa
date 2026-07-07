@@ -53,7 +53,11 @@ export default function ChatRoomPage() {
   
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const rtmClientRef = React.useRef<any>(null);
-  const chatChannelName = React.useMemo(() => `chat_${[currentUserId || 'wait', receiverId].sort().join('_')}`, [currentUserId, receiverId]);
+  const chatChannelName = React.useMemo(() => {
+    const id1 = String(currentUserId || 'wait').toLowerCase();
+    const id2 = String(receiverId).toLowerCase();
+    return `chat_${[id1, id2].sort().join('_')}`;
+  }, [currentUserId, receiverId]);
 
   React.useEffect(() => {
     async function initChat() {
