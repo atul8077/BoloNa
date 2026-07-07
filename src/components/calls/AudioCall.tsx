@@ -14,8 +14,7 @@ import {
   useRemoteUsers, 
   useRemoteAudioTracks,
   RemoteUser,
-  useConnectionState,
-  useRTCClient
+  useConnectionState
 } from "agora-rtc-react";
 import toast from "react-hot-toast";
 
