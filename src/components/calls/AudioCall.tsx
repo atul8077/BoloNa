@@ -14,7 +14,8 @@ import {
   useRemoteUsers, 
   useRemoteAudioTracks,
   RemoteUser,
-  useConnectionState
+  useConnectionState,
+  useRTCClient
 } from "agora-rtc-react";
 import toast from "react-hot-toast";
 
@@ -162,6 +163,14 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
       
       {/* Call Info */}
       <div className="flex-1 flex flex-col items-center justify-center space-y-8">
+        
+        {/* Hidden Remote Users for Audio Playback */}
+        <div className="hidden">
+          {remoteUsers.map(user => (
+            <RemoteUser key={user.uid} user={user} />
+          ))}
+        </div>
+
         <div className="relative">
           <div className="absolute inset-0 bg-[var(--primary)] rounded-full animate-ping opacity-20" />
           <img src={`https://api.dicebear.com/9.x/avataaars/svg?seed=${receiverName}`} alt={receiverName} className="relative w-40 h-40 rounded-full border-4 border-white/20 object-cover shadow-2xl z-10 bg-gray-800" />
