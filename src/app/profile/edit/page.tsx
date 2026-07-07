@@ -14,6 +14,7 @@ import imageCompression from "browser-image-compression";
 
 const editSchema = z.object({
   fullName: z.string().min(2, { message: "Name must be at least 2 characters" }),
+  username: z.string().min(3, { message: "Username must be at least 3 characters" }).regex(/^[a-zA-Z0-9_]+$/, { message: "Only letters, numbers, and underscores allowed" }),
   bio: z.string().max(500, { message: "Bio must be less than 500 characters" }).optional(),
   occupation: z.string().optional(),
   education: z.string().optional(),
@@ -34,6 +35,43 @@ export default function ProfileEditPage() {
     resolver: zodResolver(editSchema),
   });
 
+  const [usernameAvailable, setUsernameAvailable] = React.useState<boolean | null>(null);
+  const [isCheckingUsername, setIsCheckingUsername] = React.useState(false);
+  const usernameValue = watch("username");
+
+  React.useEffect(() => {
+    if (!usernameValue || usernameValue.length < 3 || !/^[a-zA-Z0-9_]+$/.test(usernameValue)) {
+      setUsernameAvailable(null);
+      return;
+    }
+
+    const checkUsername = async () => {
+      setIsCheckingUsername(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      const currentUserId = user?.id;
+
+      let query = supabase.from('profiles').select('id').eq('username', usernameValue);
+      if (currentUserId) {
+        query = query.neq('id', currentUserId);
+      }
+      
+      const { data } = await query.maybeSingle();
+      
+      if (data) {
+        setUsernameAvailable(false);
+      } else {
+        setUsernameAvailable(true);
+      }
+      setIsCheckingUsername(false);
+    };
+
+    const delayDebounceFn = setTimeout(() => {
+      checkUsername();
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [usernameValue]);
+
   const avatarUrl = watch("avatarUrl");
   const coverUrl = watch("coverUrl");
 
@@ -50,6 +88,7 @@ export default function ProfileEditPage() {
         if (data) {
           reset({
             fullName: data.full_name || '',
+            username: data.username || '',
             bio: data.bio || '',
             occupation: data.occupation || '',
             education: data.education || '',
@@ -113,6 +152,11 @@ export default function ProfileEditPage() {
   };
 
   async function onSubmit(data: EditFormValues) {
+    if (usernameAvailable === false) {
+      toast.error("Please choose a unique username");
+      return;
+    }
+
     setIsLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -121,6 +165,7 @@ export default function ProfileEditPage() {
         .from('profiles')
         .update({
           full_name: data.fullName,
+          username: data.username,
           bio: data.bio,
           occupation: data.occupation,
           education: data.education,
@@ -226,6 +271,19 @@ export default function ProfileEditPage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Occupation</label>
                 <Input placeholder="Software Engineer" {...register("occupation")} className="bg-white/50 dark:bg-[#0F172A]/50" />
+              </div>
+
+              <div className="space-y-2 relative">
+                <label className="text-sm font-medium">Username</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-gray-500">@</span>
+                  <Input placeholder="johndoe123" {...register("username")} className="bg-[var(--background)] pl-8" />
+                  {isCheckingUsername && <span className="absolute right-3 top-3 text-xs text-gray-400">Checking...</span>}
+                  {!isCheckingUsername && usernameAvailable === true && <span className="absolute right-3 top-3 text-xs text-green-500 font-bold">Available</span>}
+                  {!isCheckingUsername && usernameAvailable === false && <span className="absolute right-3 top-3 text-xs text-red-500 font-bold">Taken</span>}
+                </div>
+                {errors.username && <p className="text-sm text-[var(--danger)]">{errors.username.message}</p>}
+                {!errors.username && usernameAvailable === false && <p className="text-sm text-[var(--danger)]">This username is already taken.</p>}
               </div>
 
               <div className="space-y-2">
