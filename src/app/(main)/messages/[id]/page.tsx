@@ -49,6 +49,7 @@ export default function ChatRoomPage() {
   const [receiverProfile, setReceiverProfile] = React.useState<any>(null);
   
   const [activeCall, setActiveCall] = React.useState<'audio' | 'video' | null>(null);
+  const [incomingCallChannel, setIncomingCallChannel] = React.useState<string | null>(null);
   const [showGifts, setShowGifts] = React.useState(false);
   
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -150,7 +151,12 @@ export default function ChatRoomPage() {
                     <div className="flex flex-col space-y-2">
                       <span className="font-bold">{callInfo.callerName} is calling...</span>
                       <div className="flex space-x-2">
-                        <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={() => { stopRingtone(); setActiveCall(callInfo.callType); toast.dismiss(t.id); }}>Answer</Button>
+                        <Button size="sm" className="bg-green-500 hover:bg-green-600" onClick={() => { 
+                          stopRingtone(); 
+                          setIncomingCallChannel(callInfo.channelName);
+                          setActiveCall(callInfo.callType); 
+                          toast.dismiss(t.id); 
+                        }}>Answer</Button>
                         <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600 border-red-200" onClick={() => { 
                           stopRingtone(); 
                           toast.dismiss(t.id);
@@ -165,6 +171,7 @@ export default function ChatRoomPage() {
                 } else if (callInfo.type === 'end_call') {
                   stopRingtone();
                   setActiveCall(null);
+                  setIncomingCallChannel(null);
                   toast.dismiss(); // dismiss all toasts for simplicity or keep a reference
                 }
               } catch(e) {
@@ -290,12 +297,14 @@ export default function ChatRoomPage() {
 
     // Ring the receiver
     try {
-      await rtmClientRef.current.publish(`call_ring_${receiverId}`, JSON.stringify({
+      const callInfo = {
         type: 'ring',
         callType: type,
         callerId: currentUserId,
-        callerName: myName
-      }));
+        callerName: myName,
+        channelName: chatChannelName,
+      };
+      await rtmClientRef.current.publish(`call_ring_${receiverId}`, JSON.stringify(callInfo));
       
       // Log Call initiation to DB
       await supabase.from('call_logs').insert({
@@ -328,6 +337,7 @@ export default function ChatRoomPage() {
 
   const handleEndCall = async () => {
     setActiveCall(null);
+    setIncomingCallChannel(null);
     if (rtmClientRef.current && receiverId) {
       try {
         await rtmClientRef.current.publish(`call_ring_${receiverId}`, JSON.stringify({
@@ -441,8 +451,22 @@ export default function ChatRoomPage() {
       {showGifts && <GiftPicker onClose={() => setShowGifts(false)} onSendGift={handleSendGift} />}
       
       {/* Call Overlays */}
-      {activeCall === 'video' && <VideoCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} currentUserId={currentUserId!} onEndCall={handleEndCall} />}
-      {activeCall === 'audio' && <AudioCall receiverName={receiverProfile?.full_name || 'User'} channelName={`call_${chatChannelName}`} currentUserId={currentUserId!} onEndCall={handleEndCall} />}
+      {activeCall === 'video' && (
+        <VideoCall 
+          channelName={incomingCallChannel || chatChannelName} 
+          receiverName={receiverProfile?.full_name || 'User'} 
+          currentUserId={currentUserId!}
+          onEndCall={handleEndCall} 
+        />
+      )}
+      {activeCall === 'audio' && (
+        <AudioCall 
+          channelName={incomingCallChannel || chatChannelName} 
+          receiverName={receiverProfile?.full_name || 'User'} 
+          currentUserId={currentUserId!}
+          onEndCall={handleEndCall}
+        />
+      )}
 
     </div>
   );

@@ -34,13 +34,13 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'channelName is required for RTC token' }, { status: 400 });
       }
       
-      // For RTC, to avoid String UID mismatch errors, we generate a wildcard token using uid = 0.
-      // This allows the frontend to join with a dynamically assigned numeric UID.
+      // For RTC, use the exact numeric UID passed from the frontend to guarantee a match.
+      const numericUid = parseInt(uid as string, 10) || 0;
       const token = RtcTokenBuilder.buildTokenWithUid(
         appId,
         appCertificate,
         channelName,
-        0,
+        numericUid,
         RtcRole.PUBLISHER,
         privilegeExpiredTs,
         privilegeExpiredTs
