@@ -126,19 +126,7 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   // Publish tracks
   usePublish([localMicrophoneTrack]);
 
-  // Handle remote users
-  const { audioTracks } = useRemoteAudioTracks(remoteUsers);
-  
-  // Play remote audio explicitly as fallback
-  React.useEffect(() => {
-    audioTracks.forEach((track) => {
-      try {
-        track.play();
-      } catch (e) {
-        console.error("Audio play failed:", e);
-      }
-    });
-  }, [audioTracks]);
+
 
   // Handle mute/unmute
   React.useEffect(() => {
@@ -164,9 +152,9 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
       <div className="flex-1 flex flex-col items-center justify-center space-y-8">
         
         {/* Hidden Remote Users for Audio Playback */}
-        <div className="hidden">
+        <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
           {remoteUsers.map(user => (
-            <RemoteUser key={user.uid} user={user} />
+            <RemoteUser key={user.uid} user={user} playVideo={false} playAudio={true} />
           ))}
         </div>
 
