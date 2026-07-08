@@ -124,7 +124,10 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   }, [currentUserId, channelName]);
 
   // Publish tracks
-  usePublish([localMicrophoneTrack]);
+  const tracksToPublish = React.useMemo(() => {
+    return [localMicrophoneTrack].filter(Boolean) as any[];
+  }, [localMicrophoneTrack]);
+  usePublish(tracksToPublish);
 
 
 

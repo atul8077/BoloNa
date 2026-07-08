@@ -13,8 +13,7 @@ import {
   useJoin, 
   usePublish, 
   useRemoteUsers, 
-  useRemoteAudioTracks, 
-  useRemoteVideoTracks,
+
   RemoteUser,
   LocalVideoTrack,
   useConnectionState
@@ -128,21 +127,12 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   }, [currentUserId, channelName]);
 
   // Publish tracks
-  usePublish([localMicrophoneTrack, localCameraTrack]);
+  const tracksToPublish = React.useMemo(() => {
+    return [localMicrophoneTrack, localCameraTrack].filter(Boolean) as any[];
+  }, [localMicrophoneTrack, localCameraTrack]);
+  usePublish(tracksToPublish);
 
-  // Handle remote users
-  const { audioTracks } = useRemoteAudioTracks(remoteUsers);
-  
-  // Play remote audio explicitly as fallback
-  React.useEffect(() => {
-    audioTracks.forEach((track) => {
-      try {
-        track.play();
-      } catch (e) {
-        console.error("Audio play failed:", e);
-      }
-    });
-  }, [audioTracks]);
+
 
   // Handle mute/unmute
   React.useEffect(() => {
