@@ -57,7 +57,7 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   const remoteUsers = useRemoteUsers();
   
   // Subscribe to remote audio tracks
-  const { audioTracks } = useRemoteAudioTracks(remoteUsers);
+  useRemoteAudioTracks(remoteUsers);
 
   // Call duration timer
   const [callDuration, setCallDuration] = React.useState(0);
