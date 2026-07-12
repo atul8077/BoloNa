@@ -13,7 +13,8 @@ import {
   useJoin, 
   usePublish, 
   useRemoteUsers, 
-
+  useRemoteAudioTracks,
+  useRemoteVideoTracks,
   RemoteUser,
   LocalVideoTrack,
   useConnectionState
@@ -59,6 +60,8 @@ function VideoCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   
   // Get remote users
   const remoteUsers = useRemoteUsers();
+  useRemoteAudioTracks(remoteUsers);
+  useRemoteVideoTracks(remoteUsers);
   const connectionState = useConnectionState();
 
   const rtcClient = useRTCClient();

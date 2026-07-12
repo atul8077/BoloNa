@@ -55,6 +55,9 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
   
   // Get remote users
   const remoteUsers = useRemoteUsers();
+  
+  // Subscribe to remote audio tracks
+  const { audioTracks } = useRemoteAudioTracks(remoteUsers);
 
   // Call duration timer
   const [callDuration, setCallDuration] = React.useState(0);
@@ -177,12 +180,7 @@ function AudioCallInner({ onEndCall, receiverName, channelName, currentUserId }:
         </div>
       </div>
       
-      {/* Hidden remote users to ensure audio plays correctly via component */}
-      <div className="hidden">
-        {remoteUsers.map(user => (
-          <RemoteUser key={user.uid} user={user} />
-        ))}
-      </div>
+      {/* Hidden remote users to ensure audio plays correctly via component removed as it is duplicate */}
 
       {/* Controls */}
       <div className="h-32 bg-white/5 backdrop-blur-xl rounded-t-[3rem] flex items-center justify-center space-x-8 px-6 border-t border-white/10">
